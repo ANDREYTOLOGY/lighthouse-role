@@ -1,0 +1,61 @@
+---
+- name: Check OS family
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == "Debian"
+    fail_msg: "lighthouse-role supports Debian/Ubuntu only. Detected: {{ ansible_facts.os_family }}"
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name: "{{ lighthouse_packages }}"
+    update_cache: true
+    state: present
+  become: true
+
+- name: Create web root
+  ansible.builtin.file:
+    path: "{{ lighthouse_root }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+  become: true
+
+- name: Download LightHouse
+  ansible.builtin.git:
+    repo: "{{ lighthouse_repo }}"
+    dest: "{{ lighthouse_root }}"
+    version: "{{ lighthouse_version }}"
+    force: true
+  become: true
+
+- name: Render nginx vhost
+  ansible.builtin.template:
+    src: nginx_lighthouse.conf.j2
+    dest: "{{ lighthouse_nginx_conf_path }}"
+    mode: "0644"
+  become: true
+  notify: Reload nginx
+
+- name: Enable lighthouse site
+  ansible.builtin.file:
+    src: "{{ lighthouse_nginx_conf_path }}"
+    dest: "/etc/nginx/sites-enabled/lighthouse.conf"
+    state: link
+    force: true
+  become: true
+  notify: Reload nginx
+
+- name: Disable default nginx site if exists
+  ansible.builtin.file:
+    path: "/etc/nginx/sites-enabled/default"
+    state: absent
+  become: true
+  notify: Reload nginx
+
+- name: Ensure nginx is enabled and running
+  ansible.builtin.service:
+    name: nginx
+    enabled: true
+    state: started
+  become: true
